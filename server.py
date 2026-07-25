@@ -222,6 +222,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
+    def do_HEAD(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path in {"/", "/health"}:
+            self.send_response(HTTPStatus.OK.value)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        self.send_response(HTTPStatus.NOT_FOUND.value)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/health":
