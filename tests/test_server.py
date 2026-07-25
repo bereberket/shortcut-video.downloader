@@ -14,6 +14,18 @@ class ServerHelpersTest(unittest.TestCase):
         self.assertFalse(server.is_valid_video_url("javascript:alert(1)"))
         self.assertFalse(server.is_valid_video_url("not a url"))
 
+    def test_normalize_video_url_extracts_link_from_share_text(self):
+        self.assertEqual(
+            server.normalize_video_url("Watch this https%3A%2F%2Fwww.instagram.com%2Freel%2Fabc%2F extra"),
+            "https://www.instagram.com/reel/abc/",
+        )
+
+    def test_normalize_video_url_adds_scheme_for_www(self):
+        self.assertEqual(
+            server.normalize_video_url("www.instagram.com/reel/abc/"),
+            "https://www.instagram.com/reel/abc/",
+        )
+
     def test_safe_header_filename_removes_bad_characters(self):
         self.assertEqual(
             server.safe_header_filename(Path('my:bad/video"name.mp4')),

@@ -4,6 +4,7 @@ import json
 import mimetypes
 import os
 import base64
+import re
 import shutil
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -119,6 +120,23 @@ def is_valid_video_url(value: str) -> bool:
     except ValueError:
         return False
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def normalize_video_url(value: str) -> str:
+    cleaned = value.strip()
+    for _ in range(3):
+        decoded = unquote(cleaned).strip()
+        if decoded == cleaned:
+            break
+        cleaned = decoded
+
+    match = re.search(r"https?://[^\s<>\"']+", cleaned)
+    if match:
+        cleaned = match.group(0)
+    elif cleaned.startswith("www."):
+        cleaned = f"https://{cleaned}"
+
+    return cleaned.rstrip(".,;)")
 
 
 def safe_header_filename(path: Path) -> str:
@@ -267,8 +285,12 @@ def ensure_ytdlp_available() -> None:
 
 
 def download_video(url: str) -> tuple[Path, Path]:
+    url = normalize_video_url(url)
     if not is_valid_video_url(url):
-        raise ShortcutDownloadError(HTTPStatus.BAD_REQUEST, "Gecerli bir http/https video URL'si gonder.")
+        raise ShortcutDownloadError(
+            HTTPStatus.BAD_REQUEST,
+            "Gecerli bir http/https video URL'si gonder. Panoda dogrudan video linki oldugundan emin ol.",
+        )
 
     ensure_ytdlp_available()
     DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
