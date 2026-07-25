@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +24,8 @@ REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "0").lower() in {"1", "true", "yes"}
 DOWNLOAD_TIMEOUT_SECONDS = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "900"))
 MAX_FILESIZE = os.getenv("MAX_FILESIZE", "750M")
 DOWNLOAD_ROOT = Path(os.getenv("DOWNLOAD_ROOT", tempfile.gettempdir())) / "shortcut-video-downloads"
+READY_ROOT = DOWNLOAD_ROOT / "ready"
+READY_FILE_TTL_SECONDS = int(os.getenv("READY_FILE_TTL_SECONDS", "1800"))
 DEFAULT_FORMAT = os.getenv("YTDLP_FORMAT", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best")
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
 TRANSCODE_FOR_IOS = os.getenv("TRANSCODE_FOR_IOS", "1").lower() not in {"0", "false", "no"}
@@ -163,10 +166,11 @@ def shortcut_response(message: str, *, status: str = "error") -> dict[str, objec
     }
 
 
-def read_download_query(path: str) -> tuple[str, str, bool]:
+def read_download_query(path: str) -> tuple[str, str, bool, bool]:
     parsed = urlparse(path)
     query = parse_qs(parsed.query, keep_blank_values=True)
     debug = query.get("debug", ["0"])[0].lower() in {"1", "true", "yes"}
+    prepare = query.get("prepare", ["0"])[0].lower() in {"1", "true", "yes"}
     token = query.get("token", [""])[0]
 
     candidates: list[str] = []
@@ -179,13 +183,26 @@ def read_download_query(path: str) -> tuple[str, str, bool]:
     for candidate in candidates:
         normalized = normalize_video_url(candidate)
         if is_valid_video_url(normalized):
-            return normalized, token, debug
+            return normalized, token, debug, prepare
 
-    return "", token, debug
+    return "", token, debug, prepare
 
 
 def log_event(message: str) -> None:
     print(message, flush=True)
+
+
+def cleanup_ready_files() -> None:
+    READY_ROOT.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - READY_FILE_TTL_SECONDS
+    for item in READY_ROOT.iterdir():
+        if item.is_file() and item.stat().st_mtime < cutoff:
+            item.unlink(missing_ok=True)
+
+
+def stored_file_name(file_path: Path) -> str:
+    suffix = file_path.suffix.lower() if file_path.suffix else ".mp4"
+    return f"{uuid.uuid4().hex}-{safe_header_filename(file_path.with_suffix(suffix))}"
 
 
 def newest_downloaded_file(folder: Path) -> Path:
@@ -399,7 +416,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/debug":
-            url, token, _debug = read_download_query(self.path)
+            url, token, _debug, _prepare = read_download_query(self.path)
             self.send_json(
                 HTTPStatus.OK,
                 {
@@ -412,8 +429,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/download":
-            url, _token, debug = read_download_query(self.path)
-            self.handle_download(url, debug=debug)
+            url, _token, debug, prepare = read_download_query(self.path)
+            self.handle_download(url, debug=debug, prepare=prepare)
+            return
+
+        if parsed.path.startswith("/files/"):
+            self.handle_ready_file(parsed.path.removeprefix("/files/"))
             return
 
         if parsed.path == "/":
@@ -477,12 +498,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "Token hatali veya eksik."})
         return False
 
-    def handle_download(self, url: str, *, debug: bool = False) -> None:
+    def handle_download(self, url: str, *, debug: bool = False, prepare: bool = False) -> None:
         global _active_downloads
         if not self.require_token():
             return
 
-        log_event(f"download request debug={debug} url_length={len(url)} url={url[:160]}")
+        log_event(f"download request debug={debug} prepare={prepare} url_length={len(url)} url={url[:160]}")
 
         if _active_downloads >= MAX_CONCURRENT_DOWNLOADS:
             self.send_json(
@@ -498,14 +519,17 @@ class Handler(BaseHTTPRequestHandler):
             file_size = file_path.stat().st_size
             content_type = self.guess_file_content_type(file_path)
             log_event(f"download ready file={file_path.name} size={file_size} content_type={content_type}")
-            if debug:
+            if debug or prepare:
+                ready_name = self.store_ready_file(file_path)
+                file_url = f"{self.public_base_url()}/files/{ready_name}"
                 self.send_json(
                     HTTPStatus.OK,
                     {
                         "ok": True,
-                        "file_name": file_path.name,
+                        "file_name": ready_name,
                         "file_size": file_size,
                         "content_type": content_type,
+                        "file_url": file_url,
                     },
                 )
                 return
@@ -517,6 +541,33 @@ class Handler(BaseHTTPRequestHandler):
             _active_downloads = max(0, _active_downloads - 1)
             if job_dir is not None:
                 shutil.rmtree(job_dir, ignore_errors=True)
+
+    def handle_ready_file(self, raw_name: str) -> None:
+        cleanup_ready_files()
+        name = safe_header_filename(Path(unquote(raw_name)))
+        if not name:
+            self.send_json(HTTPStatus.NOT_FOUND, shortcut_response("Dosya bulunamadi."))
+            return
+
+        file_path = READY_ROOT / name
+        if not file_path.exists() or not file_path.is_file():
+            self.send_json(HTTPStatus.NOT_FOUND, shortcut_response("Dosya bulunamadi veya suresi doldu."))
+            return
+
+        log_event(f"serving ready file={file_path.name} size={file_path.stat().st_size}")
+        self.send_file(file_path)
+
+    def store_ready_file(self, file_path: Path) -> str:
+        cleanup_ready_files()
+        name = stored_file_name(file_path)
+        target = READY_ROOT / name
+        shutil.copy2(file_path, target)
+        return name
+
+    def public_base_url(self) -> str:
+        proto = self.headers.get("X-Forwarded-Proto", "https")
+        host = self.headers.get("Host", f"localhost:{PORT}")
+        return f"{proto}://{host}"
 
     def send_json(self, status: HTTPStatus, payload: dict[str, object]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -557,6 +608,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    READY_ROOT.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Shortcut Video Downloader running at http://{HOST}:{PORT}")
     print("Press Ctrl+C to stop.")

@@ -38,15 +38,16 @@ class ServerHelpersTest(unittest.TestCase):
         self.assertIn("Public", message)
 
     def test_read_download_query_decodes_url(self):
-        url, token, debug = server.read_download_query(
-            "/api/download?token=abc&debug=1&url=https%3A%2F%2Fexample.com%2Fvideo"
+        url, token, debug, prepare = server.read_download_query(
+            "/api/download?token=abc&debug=1&prepare=1&url=https%3A%2F%2Fexample.com%2Fvideo"
         )
         self.assertEqual(url, "https://example.com/video")
         self.assertEqual(token, "abc")
         self.assertTrue(debug)
+        self.assertTrue(prepare)
 
     def test_read_download_query_finds_raw_encoded_url(self):
-        url, token, debug = server.read_download_query(
+        url, token, debug, _prepare = server.read_download_query(
             "/api/download?debug=1&https%3A%2F%2Fwww.instagram.com%2Freel%2Fabc%2F"
         )
         self.assertEqual(url, "https://www.instagram.com/reel/abc/")
@@ -54,7 +55,7 @@ class ServerHelpersTest(unittest.TestCase):
         self.assertTrue(debug)
 
     def test_read_download_query_accepts_alternate_key(self):
-        url, _token, _debug = server.read_download_query(
+        url, _token, _debug, _prepare = server.read_download_query(
             "/api/download?u=Watch%2520this%2520https%253A%252F%252Fwww.instagram.com%252Freel%252Fabc%252F"
         )
         self.assertEqual(url, "https://www.instagram.com/reel/abc/")
