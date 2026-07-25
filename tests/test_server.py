@@ -25,6 +25,13 @@ class ServerHelpersTest(unittest.TestCase):
         self.assertIn("giris istiyor", message)
         self.assertIn("Public", message)
 
+    def test_read_download_query_decodes_url(self):
+        url, token = server.read_download_query(
+            "/api/download?token=abc&url=https%3A%2F%2Fexample.com%2Fvideo"
+        )
+        self.assertEqual(url, "https://example.com/video")
+        self.assertEqual(token, "abc")
+
 
 if __name__ == "__main__":
     unittest.main()

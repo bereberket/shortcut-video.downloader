@@ -134,6 +134,12 @@ def shortcut_response(message: str, *, status: str = "error") -> dict[str, objec
     }
 
 
+def read_download_query(path: str) -> tuple[str, str]:
+    parsed = urlparse(path)
+    query = parse_qs(parsed.query)
+    return query.get("url", [""])[0], query.get("token", [""])[0]
+
+
 def newest_downloaded_file(folder: Path) -> Path:
     candidates = [
         item
@@ -340,9 +346,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(HTTPStatus.OK, {"ok": True})
             return
 
+        if parsed.path == "/api/debug":
+            url, token = read_download_query(self.path)
+            self.send_json(
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "received_url": url,
+                    "received_url_length": len(url),
+                    "has_token": bool(token),
+                },
+            )
+            return
+
         if parsed.path == "/api/download":
-            query = parse_qs(parsed.query)
-            url = query.get("url", [""])[0]
+            url, _token = read_download_query(self.path)
             self.handle_download(url)
             return
 
