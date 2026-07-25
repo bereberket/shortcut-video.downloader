@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8787"))
 SHORTCUT_TOKEN = os.getenv("SHORTCUT_TOKEN", "")
+REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "0").lower() in {"1", "true", "yes"}
 DOWNLOAD_TIMEOUT_SECONDS = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "900"))
 MAX_FILESIZE = os.getenv("MAX_FILESIZE", "750M")
 DOWNLOAD_ROOT = Path(os.getenv("DOWNLOAD_ROOT", tempfile.gettempdir())) / "shortcut-video-downloads"
@@ -391,6 +392,9 @@ class Handler(BaseHTTPRequestHandler):
         return value
 
     def require_token(self) -> bool:
+        if not REQUIRE_TOKEN:
+            return True
+
         if not SHORTCUT_TOKEN:
             return True
 

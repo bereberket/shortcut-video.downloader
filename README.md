@@ -69,7 +69,8 @@ curl -X POST http://localhost:8787/api/download -H "Content-Type: application/js
 
 - `PORT`: Varsayilan `8787`
 - `HOST`: Varsayilan `0.0.0.0`
-- `SHORTCUT_TOKEN`: Bos ise token istemez. Cloud'da mutlaka ayarla.
+- `REQUIRE_TOKEN`: Varsayilan `0`. `1` yaparsan token kontrolu acilir.
+- `SHORTCUT_TOKEN`: `REQUIRE_TOKEN=1` ise beklenen token degeri.
 - `MAX_FILESIZE`: Varsayilan `750M`
 - `DOWNLOAD_TIMEOUT_SECONDS`: Varsayilan `900`
 - `YTDLP_FORMAT`: yt-dlp format secimi

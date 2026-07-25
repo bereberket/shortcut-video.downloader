@@ -20,7 +20,8 @@ Dockerfile
 Ortam degiskenleri:
 
 - `PORT`: Hosting genelde otomatik verir. Vermezse `8787`.
-- `SHORTCUT_TOKEN`: Mutlaka uzun bir sifre koy.
+- `REQUIRE_TOKEN`: Ilk test icin `0`. Sistem oturunca `1` yap.
+- `SHORTCUT_TOKEN`: `REQUIRE_TOKEN=1` ise uzun bir sifre koy.
 - `MAX_FILESIZE`: Ornek `750M`.
 - `DOWNLOAD_TIMEOUT_SECONDS`: Ornek `900`.
 - `MAX_CONCURRENT_DOWNLOADS`: Ornek `2`.
@@ -57,7 +58,7 @@ https://HOSTINGIN-VERDIGI-URL/
 
 ## Onemli not
 
-Bu servis herkese acik internette duracagi icin token olmadan calistirma. Aksi halde baskalari senin servisinden video indirmeye calisabilir.
+Bu servis herkese acik internette duracagi icin sistemi test ettikten sonra `REQUIRE_TOKEN=1` yap. Aksi halde baskalari senin servisinden video indirmeye calisabilir.
 
 ## Instagram Story / private icerikler
 
