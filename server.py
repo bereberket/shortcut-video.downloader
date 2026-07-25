@@ -29,7 +29,7 @@ READY_ROOT = DOWNLOAD_ROOT / "ready"
 READY_FILE_TTL_SECONDS = int(os.getenv("READY_FILE_TTL_SECONDS", "1800"))
 DEFAULT_FORMAT = os.getenv("YTDLP_FORMAT", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best")
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
-TRANSCODE_FOR_IOS = os.getenv("TRANSCODE_FOR_IOS", "1").lower() not in {"0", "false", "no"}
+IOS_TRANSCODE_MODE = os.getenv("TRANSCODE_FOR_IOS", "auto").lower()
 YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 YTDLP_COOKIES_TEXT = os.getenv("YTDLP_COOKIES_TEXT", "")
 YTDLP_COOKIES_BASE64 = os.getenv("YTDLP_COOKIES_BASE64", "")
@@ -254,8 +254,58 @@ def cookies_path_for_job(job_dir: Path) -> str:
     return str(cookies_file)
 
 
+def is_ios_compatible_video(file_path: Path) -> bool:
+    if file_path.suffix.lower() != ".mp4":
+        return False
+
+    try:
+        completed = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,codec_name",
+                "-of",
+                "json",
+                str(file_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        payload = json.loads(completed.stdout) if completed.returncode == 0 else {}
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return False
+
+    streams = payload.get("streams", [])
+    if not isinstance(streams, list):
+        return False
+
+    video_codecs = {
+        str(stream.get("codec_name", ""))
+        for stream in streams
+        if isinstance(stream, dict) and stream.get("codec_type") == "video"
+    }
+    audio_codecs = {
+        str(stream.get("codec_name", ""))
+        for stream in streams
+        if isinstance(stream, dict) and stream.get("codec_type") == "audio"
+    }
+    return bool(video_codecs) and video_codecs <= {"h264", "hevc"} and audio_codecs <= {
+        "aac",
+        "alac",
+        "mp3",
+    }
+
+
 def make_ios_compatible_video(file_path: Path, job_dir: Path) -> Path:
-    if not TRANSCODE_FOR_IOS:
+    if IOS_TRANSCODE_MODE in {"0", "false", "no"}:
+        return file_path
+    if IOS_TRANSCODE_MODE == "auto" and is_ios_compatible_video(file_path):
+        log_event(f"iPhone compatible source kept without transcode file={file_path.name}")
         return file_path
 
     output_path = job_dir / f"{file_path.stem}-iphone.mp4"

@@ -1,6 +1,7 @@
 import tempfile
 import threading
 import unittest
+from subprocess import CompletedProcess
 from pathlib import Path
 from urllib.request import urlopen
 from unittest.mock import patch
@@ -40,6 +41,27 @@ class ServerHelpersTest(unittest.TestCase):
         message = server.friendly_ytdlp_error("ERROR: You need to log in to access this content")
         self.assertIn("giris istiyor", message)
         self.assertIn("Public", message)
+
+    def test_ios_compatible_mp4_is_detected(self):
+        probe = CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"streams":[{"codec_type":"video","codec_name":"h264"},'
+            '{"codec_type":"audio","codec_name":"aac"}]}',
+            stderr="",
+        )
+        with patch.object(server.subprocess, "run", return_value=probe):
+            self.assertTrue(server.is_ios_compatible_video(Path("video.mp4")))
+
+    def test_auto_mode_skips_transcode_for_compatible_mp4(self):
+        source = Path("video.mp4")
+        with (
+            patch.object(server, "IOS_TRANSCODE_MODE", "auto"),
+            patch.object(server, "is_ios_compatible_video", return_value=True),
+            patch.object(server.subprocess, "run") as run,
+        ):
+            self.assertEqual(server.make_ios_compatible_video(source, Path(".")), source)
+            run.assert_not_called()
 
     def test_read_download_query_decodes_url(self):
         url, token, debug, prepare = server.read_download_query(
