@@ -25,7 +25,40 @@ Cloud'da `SHORTCUT_TOKEN` kullaniyorsan ucuncu `Metin` aksiyonu ekle:
    - Ad: `Token`
    - Import Question metni: `Servis token'i`
 
-## Aksiyonlar
+## En basit calisan akis
+
+Sunucu indirmeyi arka planda tamamlar. `Get Contents of URL`, kisa bekleme
+yonlendirmelerini otomatik takip eder ve sonunda gercek MP4 dosyasini dondurur.
+
+1. `Get Clipboard`
+2. `URL Encode`
+   - Input: `Clipboard`
+3. `URL`
+   - Icerik:
+
+```text
+https://HOSTINGIN-VERDIGI-URL/api/download?url=URL_ENCODED_TEXT
+```
+
+Burada `URL_ENCODED_TEXT` kismina ikinci aksiyonun ciktisi olan mavi
+`URL Encoded Text` degiskenini ekle. Render'da token zorunluysa URL'ye
+`&token=TOKEN_DEGERIN` ekle.
+
+4. `Get Contents of URL`
+   - Input: onceki aksiyonun mavi `URL` degiskeni
+   - Method: `GET`
+   - Headers: bos
+   - Request Body: yok
+5. `Set Name`
+   - Input: `Contents of URL`
+   - Name: `video.mp4`
+6. `Save to Photo Album`
+   - Input: `Renamed Item`
+   - Album: `Recents`
+7. `Show Notification`
+   - `Video saved`
+
+## Alternatif POST aksiyonlari
 
 1. `Kestirme Girdisini Al`
 2. `Eger Kestirme Girdisi Deger Iceriyorsa`

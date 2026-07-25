@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from http import HTTPStatus
@@ -33,6 +34,8 @@ YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 YTDLP_COOKIES_TEXT = os.getenv("YTDLP_COOKIES_TEXT", "")
 YTDLP_COOKIES_BASE64 = os.getenv("YTDLP_COOKIES_BASE64", "")
 _active_downloads = 0
+_download_lock = threading.Lock()
+_download_jobs: dict[str, dict[str, object]] = {}
 
 HOME_HTML = """<!doctype html>
 <html lang="tr">
@@ -391,6 +394,115 @@ def download_video(url: str) -> tuple[Path, Path]:
     return make_ios_compatible_video(downloaded_file, job_dir), job_dir
 
 
+def store_ready_file(file_path: Path) -> str:
+    cleanup_ready_files()
+    name = stored_file_name(file_path)
+    shutil.copy2(file_path, READY_ROOT / name)
+    return name
+
+
+def cleanup_download_jobs() -> None:
+    cutoff = time.time() - READY_FILE_TTL_SECONDS
+    with _download_lock:
+        expired = [
+            job_id
+            for job_id, job in _download_jobs.items()
+            if float(job.get("finished_at", time.time())) < cutoff
+        ]
+        for job_id in expired:
+            _download_jobs.pop(job_id, None)
+
+
+def run_download_job(job_id: str, url: str) -> None:
+    global _active_downloads
+    job_dir: Path | None = None
+    try:
+        file_path, job_dir = download_video(url)
+        file_size = file_path.stat().st_size
+        content_type = "video/mp4" if file_path.suffix.lower() == ".mp4" else (
+            mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        )
+        ready_name = store_ready_file(file_path)
+        with _download_lock:
+            job = _download_jobs[job_id]
+            job.update(
+                {
+                    "state": "ready",
+                    "file_name": ready_name,
+                    "file_size": file_size,
+                    "content_type": content_type,
+                    "finished_at": time.time(),
+                }
+            )
+        log_event(f"download job ready id={job_id} file={ready_name} size={file_size}")
+    except ShortcutDownloadError as exc:
+        with _download_lock:
+            job = _download_jobs[job_id]
+            job.update(
+                {
+                    "state": "error",
+                    "status": exc.status.value,
+                    "message": exc.message,
+                    "finished_at": time.time(),
+                }
+            )
+        log_event(f"download job error id={job_id} status={exc.status.value} message={exc.message}")
+    except Exception as exc:
+        with _download_lock:
+            job = _download_jobs[job_id]
+            job.update(
+                {
+                    "state": "error",
+                    "status": HTTPStatus.INTERNAL_SERVER_ERROR.value,
+                    "message": f"Beklenmeyen sunucu hatasi: {exc}",
+                    "finished_at": time.time(),
+                }
+            )
+        log_event(f"download job error id={job_id} status=500 message={exc}")
+    finally:
+        if job_dir is not None:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        with _download_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+            job = _download_jobs.get(job_id)
+            event = job.get("event") if job else None
+        if isinstance(event, threading.Event):
+            event.set()
+
+
+def start_download_job(url: str) -> str:
+    global _active_downloads
+    normalized = normalize_video_url(url)
+    if not is_valid_video_url(normalized):
+        raise ShortcutDownloadError(
+            HTTPStatus.BAD_REQUEST,
+            f"Gecerli bir http/https video URL'si gonder. Gelen ham deger uzunlugu: {len(normalized)}",
+        )
+
+    cleanup_download_jobs()
+    with _download_lock:
+        if _active_downloads >= MAX_CONCURRENT_DOWNLOADS:
+            raise ShortcutDownloadError(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                "Servis mesgul. Biraz sonra tekrar dene.",
+            )
+        job_id = uuid.uuid4().hex
+        _active_downloads += 1
+        _download_jobs[job_id] = {
+            "state": "running",
+            "event": threading.Event(),
+            "created_at": time.time(),
+        }
+
+    threading.Thread(
+        target=run_download_job,
+        args=(job_id, normalized),
+        name=f"download-{job_id[:8]}",
+        daemon=True,
+    ).start()
+    return job_id
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ShortcutVideoDownloader/1.0"
 
@@ -429,8 +541,25 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/download":
+            if not self.require_token():
+                return
             url, _token, debug, prepare = read_download_query(self.path)
-            self.handle_download(url, debug=debug, prepare=prepare)
+            log_event(
+                f"download request debug={debug} prepare={prepare} "
+                f"url_length={len(url)} url={url[:160]}"
+            )
+            try:
+                job_id = start_download_job(url)
+            except ShortcutDownloadError as exc:
+                self.send_json(exc.status, shortcut_response(exc.message))
+                return
+            log_event(f"download job started id={job_id}")
+            self.send_redirect(f"/jobs/{job_id}/wait")
+            return
+
+        job_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/wait", parsed.path)
+        if job_match:
+            self.handle_job_wait(job_match.group(1))
             return
 
         if parsed.path.startswith("/files/"):
@@ -557,12 +686,33 @@ class Handler(BaseHTTPRequestHandler):
         log_event(f"serving ready file={file_path.name} size={file_path.stat().st_size}")
         self.send_file(file_path)
 
+    def handle_job_wait(self, job_id: str) -> None:
+        with _download_lock:
+            job = _download_jobs.get(job_id)
+            event = job.get("event") if job else None
+
+        if job is None or not isinstance(event, threading.Event):
+            self.send_json(HTTPStatus.NOT_FOUND, shortcut_response("Indirme isi bulunamadi veya suresi doldu."))
+            return
+
+        event.wait(timeout=15)
+        with _download_lock:
+            current = dict(_download_jobs.get(job_id, {}))
+
+        state = current.get("state")
+        if state == "running":
+            self.send_redirect(f"/jobs/{job_id}/wait")
+            return
+        if state == "ready":
+            self.send_redirect(f"/files/{current['file_name']}")
+            return
+
+        status = HTTPStatus(int(current.get("status", HTTPStatus.BAD_GATEWAY.value)))
+        message = str(current.get("message", "Video indirilemedi."))
+        self.send_json(status, shortcut_response(message))
+
     def store_ready_file(self, file_path: Path) -> str:
-        cleanup_ready_files()
-        name = stored_file_name(file_path)
-        target = READY_ROOT / name
-        shutil.copy2(file_path, target)
-        return name
+        return store_ready_file(file_path)
 
     def public_base_url(self) -> str:
         proto = self.headers.get("X-Forwarded-Proto", "https")
@@ -584,6 +734,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_redirect(self, location: str) -> None:
+        self.send_response(HTTPStatus.SEE_OTHER.value)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def send_file(self, file_path: Path) -> None:
         content_type = self.guess_file_content_type(file_path)

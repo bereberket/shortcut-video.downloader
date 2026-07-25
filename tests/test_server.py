@@ -1,5 +1,9 @@
+import tempfile
+import threading
 import unittest
 from pathlib import Path
+from urllib.request import urlopen
+from unittest.mock import patch
 
 import server
 
@@ -59,6 +63,68 @@ class ServerHelpersTest(unittest.TestCase):
             "/api/download?u=Watch%2520this%2520https%253A%252F%252Fwww.instagram.com%252Freel%252Fabc%252F"
         )
         self.assertEqual(url, "https://www.instagram.com/reel/abc/")
+
+    def test_background_download_job_stores_ready_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            job_dir = root / "job"
+            ready_dir = root / "ready"
+            job_dir.mkdir()
+            source = job_dir / "video.mp4"
+            source.write_bytes(b"video-data")
+
+            server._download_jobs.clear()
+            server._active_downloads = 0
+            with (
+                patch.object(server, "READY_ROOT", ready_dir),
+                patch.object(server, "download_video", return_value=(source, job_dir)),
+            ):
+                job_id = server.start_download_job("https://example.com/video")
+                event = server._download_jobs[job_id]["event"]
+                self.assertTrue(event.wait(timeout=2))
+                job = server._download_jobs[job_id]
+
+            self.assertEqual(job["state"], "ready")
+            self.assertEqual(job["file_size"], len(b"video-data"))
+            self.assertTrue((ready_dir / str(job["file_name"])).exists())
+            self.assertEqual(server._active_downloads, 0)
+            server._download_jobs.clear()
+
+    def test_background_download_job_rejects_invalid_url(self):
+        with self.assertRaises(server.ShortcutDownloadError):
+            server.start_download_job("not-a-url")
+
+    def test_get_download_follows_wait_redirects_to_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            job_dir = root / "job"
+            ready_dir = root / "ready"
+            job_dir.mkdir()
+            source = job_dir / "video.mp4"
+            source.write_bytes(b"real-video-bytes")
+
+            server._download_jobs.clear()
+            server._active_downloads = 0
+            httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+            http_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            with (
+                patch.object(server, "READY_ROOT", ready_dir),
+                patch.object(server, "download_video", return_value=(source, job_dir)),
+            ):
+                http_thread.start()
+                port = httpd.server_address[1]
+                with urlopen(
+                    f"http://127.0.0.1:{port}/api/download"
+                    "?url=https%3A%2F%2Fexample.com%2Fvideo",
+                    timeout=5,
+                ) as response:
+                    self.assertEqual(response.headers.get_content_type(), "video/mp4")
+                    self.assertEqual(response.read(), b"real-video-bytes")
+
+            httpd.shutdown()
+            httpd.server_close()
+            http_thread.join(timeout=2)
+            server._download_jobs.clear()
 
 
 if __name__ == "__main__":
