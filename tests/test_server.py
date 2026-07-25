@@ -20,6 +20,11 @@ class ServerHelpersTest(unittest.TestCase):
             "video_name.mp4",
         )
 
+    def test_friendly_ytdlp_error_explains_login_required(self):
+        message = server.friendly_ytdlp_error("ERROR: You need to log in to access this content")
+        self.assertIn("giris istiyor", message)
+        self.assertIn("Public", message)
+
 
 if __name__ == "__main__":
     unittest.main()

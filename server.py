@@ -23,6 +23,7 @@ MAX_FILESIZE = os.getenv("MAX_FILESIZE", "750M")
 DOWNLOAD_ROOT = Path(os.getenv("DOWNLOAD_ROOT", tempfile.gettempdir())) / "shortcut-video-downloads"
 DEFAULT_FORMAT = os.getenv("YTDLP_FORMAT", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best")
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
+TRANSCODE_FOR_IOS = os.getenv("TRANSCODE_FOR_IOS", "1").lower() not in {"0", "false", "no"}
 YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 YTDLP_COOKIES_TEXT = os.getenv("YTDLP_COOKIES_TEXT", "")
 YTDLP_COOKIES_BASE64 = os.getenv("YTDLP_COOKIES_BASE64", "")
@@ -178,6 +179,65 @@ def cookies_path_for_job(job_dir: Path) -> str:
     return str(cookies_file)
 
 
+def make_ios_compatible_video(file_path: Path, job_dir: Path) -> Path:
+    if not TRANSCODE_FOR_IOS:
+        return file_path
+
+    output_path = job_dir / f"{file_path.stem}-iphone.mp4"
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(file_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        "main",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=DOWNLOAD_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ShortcutDownloadError(
+            HTTPStatus.BAD_GATEWAY,
+            "Video indirildi ama iPhone uyumlu MP4'e cevrilemedi.",
+        ) from exc
+
+    if completed.returncode != 0 or not output_path.exists() or output_path.stat().st_size == 0:
+        detail = (completed.stderr or completed.stdout).strip().splitlines()
+        last_line = detail[-1] if detail else "Bilinmeyen ffmpeg hatasi."
+        raise ShortcutDownloadError(
+            HTTPStatus.BAD_GATEWAY,
+            f"Video indirildi ama iPhone uyumlu MP4'e cevrilemedi: {last_line[:300]}",
+        )
+
+    return output_path
+
+
 def ensure_ytdlp_available() -> None:
     try:
         subprocess.run(
@@ -251,7 +311,8 @@ def download_video(url: str) -> tuple[Path, Path]:
         last_line = detail[-1] if detail else "Bilinmeyen yt-dlp hatasi."
         raise ShortcutDownloadError(HTTPStatus.BAD_GATEWAY, friendly_ytdlp_error(last_line[:500]))
 
-    return newest_downloaded_file(job_dir), job_dir
+    downloaded_file = newest_downloaded_file(job_dir)
+    return make_ios_compatible_video(downloaded_file, job_dir), job_dir
 
 
 class Handler(BaseHTTPRequestHandler):

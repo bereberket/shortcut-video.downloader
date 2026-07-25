@@ -25,6 +25,7 @@ Ortam degiskenleri:
 - `DOWNLOAD_TIMEOUT_SECONDS`: Ornek `900`.
 - `MAX_CONCURRENT_DOWNLOADS`: Ornek `2`.
 - `YTDLP_COOKIES_BASE64`: Sadece gerekirse, kendi hesabina ait cookies.txt iceriginin base64 hali.
+- `TRANSCODE_FOR_IOS`: Varsayilan `1`. iPhone galerisine kayit icin acik kalsin.
 
 ## Cloud URL
 
