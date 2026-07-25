@@ -26,8 +26,8 @@ Ortam degiskenleri:
 - `DOWNLOAD_TIMEOUT_SECONDS`: Ornek `900`.
 - `MAX_CONCURRENT_DOWNLOADS`: Ornek `2`.
 - `YTDLP_COOKIES_BASE64`: Sadece gerekirse, kendi hesabina ait cookies.txt iceriginin base64 hali.
-- `TRANSCODE_FOR_IOS`: Varsayilan `0`. Ucretsiz instance'ta kapali kalsin.
-  Kaynak site uyumsuz codec verirse `auto` denenebilir.
+- `TRANSCODE_FOR_IOS`: Varsayilan `auto`. Uyumlu H.264 dosyalari aynen gecirir,
+  VP9 gibi Photos'un reddettigi dosyalari dusuk kaynakla donusturur.
 
 ## Cloud URL
 

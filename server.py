@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8787"))
-APP_VERSION = os.getenv("APP_VERSION", "2026-07-25.4")
+APP_VERSION = os.getenv("APP_VERSION", "2026-07-25.5")
 SHORTCUT_TOKEN = os.getenv("SHORTCUT_TOKEN", "")
 REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "0").lower() in {"1", "true", "yes"}
 DOWNLOAD_TIMEOUT_SECONDS = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "900"))
@@ -39,7 +39,7 @@ DEFAULT_FORMAT = os.getenv(
     ),
 )
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
-IOS_TRANSCODE_MODE = os.getenv("TRANSCODE_FOR_IOS", "0").lower()
+IOS_TRANSCODE_MODE = os.getenv("TRANSCODE_FOR_IOS", "auto").lower()
 YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 YTDLP_COOKIES_TEXT = os.getenv("YTDLP_COOKIES_TEXT", "")
 YTDLP_COOKIES_BASE64 = os.getenv("YTDLP_COOKIES_BASE64", "")
@@ -335,9 +335,11 @@ def make_ios_compatible_video(file_path: Path, job_dir: Path) -> Path:
         "-pix_fmt",
         "yuv420p",
         "-preset",
-        "veryfast",
+        "ultrafast",
         "-crf",
-        "23",
+        "24",
+        "-threads",
+        "1",
         "-c:a",
         "aac",
         "-b:a",

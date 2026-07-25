@@ -79,8 +79,8 @@ curl -X POST http://localhost:8787/api/download -H "Content-Type: application/js
 - `YTDLP_COOKIES_FILE`: Hosting icinde mevcut bir cookies.txt yolu
 - `YTDLP_COOKIES_TEXT`: Netscape cookies.txt icerigi
 - `YTDLP_COOKIES_BASE64`: Netscape cookies.txt iceriginin base64 hali
-- `TRANSCODE_FOR_IOS`: Varsayilan `0`. `auto` uyumsuz dosyalari, `1` tum dosyalari
-  H.264/AAC MP4'e cevirir. Ucretsiz Render instance'inda varsayilani kullan.
+- `TRANSCODE_FOR_IOS`: Varsayilan `auto`. Yalnizca uyumsuz dosyalari dusuk kaynak
+  kullanarak H.264/AAC MP4'e cevirir. `1` tum dosyalari cevirir, `0` kapatir.
 
 Token ornegi:
 
