@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8787"))
+APP_VERSION = os.getenv("APP_VERSION", "2026-07-25.3")
 SHORTCUT_TOKEN = os.getenv("SHORTCUT_TOKEN", "")
 REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "0").lower() in {"1", "true", "yes"}
 DOWNLOAD_TIMEOUT_SECONDS = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "900"))
@@ -29,7 +30,7 @@ READY_ROOT = DOWNLOAD_ROOT / "ready"
 READY_FILE_TTL_SECONDS = int(os.getenv("READY_FILE_TTL_SECONDS", "1800"))
 DEFAULT_FORMAT = os.getenv("YTDLP_FORMAT", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best")
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
-IOS_TRANSCODE_MODE = os.getenv("TRANSCODE_FOR_IOS", "auto").lower()
+IOS_TRANSCODE_MODE = os.getenv("TRANSCODE_FOR_IOS", "0").lower()
 YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
 YTDLP_COOKIES_TEXT = os.getenv("YTDLP_COOKIES_TEXT", "")
 YTDLP_COOKIES_BASE64 = os.getenv("YTDLP_COOKIES_BASE64", "")
@@ -574,7 +575,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            self.send_json(HTTPStatus.OK, {"ok": True})
+            self.send_json(HTTPStatus.OK, {"ok": True, "version": APP_VERSION})
             return
 
         if parsed.path == "/api/debug":
