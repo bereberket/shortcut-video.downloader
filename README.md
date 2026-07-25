@@ -74,6 +74,7 @@ curl -X POST http://localhost:8787/api/download -H "Content-Type: application/js
 - `MAX_FILESIZE`: Varsayilan `750M`
 - `DOWNLOAD_TIMEOUT_SECONDS`: Varsayilan `900`
 - `YTDLP_FORMAT`: yt-dlp format secimi
+  - Varsayilan secim iPhone Photos icin H.264 (`avc1`) MP4'e oncelik verir.
 - `MAX_CONCURRENT_DOWNLOADS`: Ayni anda kac indirmeye izin verilecegi. Varsayilan `2`
 - `YTDLP_COOKIES_FILE`: Hosting icinde mevcut bir cookies.txt yolu
 - `YTDLP_COOKIES_TEXT`: Netscape cookies.txt icerigi
