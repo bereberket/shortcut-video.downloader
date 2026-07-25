@@ -122,18 +122,29 @@ def is_valid_video_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def normalize_video_url(value: str) -> str:
+def repeatedly_unquote(value: str) -> str:
     cleaned = value.strip()
     for _ in range(3):
         decoded = unquote(cleaned).strip()
         if decoded == cleaned:
             break
         cleaned = decoded
+    return cleaned
+
+
+def normalize_video_url(value: str) -> str:
+    cleaned = repeatedly_unquote(value)
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ").replace("\t", " ")
 
     match = re.search(r"https?://[^\s<>\"']+", cleaned)
     if match:
         cleaned = match.group(0)
-    elif cleaned.startswith("www."):
+    else:
+        www_match = re.search(r"www\.[^\s<>\"']+", cleaned)
+        if www_match:
+            cleaned = f"https://{www_match.group(0)}"
+
+    if cleaned.startswith("www."):
         cleaned = f"https://{cleaned}"
 
     return cleaned.rstrip(".,;)")
@@ -154,9 +165,23 @@ def shortcut_response(message: str, *, status: str = "error") -> dict[str, objec
 
 def read_download_query(path: str) -> tuple[str, str, bool]:
     parsed = urlparse(path)
-    query = parse_qs(parsed.query)
+    query = parse_qs(parsed.query, keep_blank_values=True)
     debug = query.get("debug", ["0"])[0].lower() in {"1", "true", "yes"}
-    return query.get("url", [""])[0], query.get("token", [""])[0], debug
+    token = query.get("token", [""])[0]
+
+    candidates: list[str] = []
+    for key in ("url", "u", "link", "input", "text"):
+        candidates.extend(query.get(key, []))
+    for values in query.values():
+        candidates.extend(values)
+    candidates.extend([parsed.query, parsed.path])
+
+    for candidate in candidates:
+        normalized = normalize_video_url(candidate)
+        if is_valid_video_url(normalized):
+            return normalized, token, debug
+
+    return "", token, debug
 
 
 def log_event(message: str) -> None:
@@ -289,7 +314,7 @@ def download_video(url: str) -> tuple[Path, Path]:
     if not is_valid_video_url(url):
         raise ShortcutDownloadError(
             HTTPStatus.BAD_REQUEST,
-            "Gecerli bir http/https video URL'si gonder. Panoda dogrudan video linki oldugundan emin ol.",
+            f"Gecerli bir http/https video URL'si gonder. Gelen ham deger uzunlugu: {len(url)}",
         )
 
     ensure_ytdlp_available()

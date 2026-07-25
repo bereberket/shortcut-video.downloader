@@ -45,6 +45,20 @@ class ServerHelpersTest(unittest.TestCase):
         self.assertEqual(token, "abc")
         self.assertTrue(debug)
 
+    def test_read_download_query_finds_raw_encoded_url(self):
+        url, token, debug = server.read_download_query(
+            "/api/download?debug=1&https%3A%2F%2Fwww.instagram.com%2Freel%2Fabc%2F"
+        )
+        self.assertEqual(url, "https://www.instagram.com/reel/abc/")
+        self.assertEqual(token, "")
+        self.assertTrue(debug)
+
+    def test_read_download_query_accepts_alternate_key(self):
+        url, _token, _debug = server.read_download_query(
+            "/api/download?u=Watch%2520this%2520https%253A%252F%252Fwww.instagram.com%252Freel%252Fabc%252F"
+        )
+        self.assertEqual(url, "https://www.instagram.com/reel/abc/")
+
 
 if __name__ == "__main__":
     unittest.main()
