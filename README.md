@@ -74,6 +74,9 @@ curl -X POST http://localhost:8787/api/download -H "Content-Type: application/js
 - `DOWNLOAD_TIMEOUT_SECONDS`: Varsayilan `900`
 - `YTDLP_FORMAT`: yt-dlp format secimi
 - `MAX_CONCURRENT_DOWNLOADS`: Ayni anda kac indirmeye izin verilecegi. Varsayilan `2`
+- `YTDLP_COOKIES_FILE`: Hosting icinde mevcut bir cookies.txt yolu
+- `YTDLP_COOKIES_TEXT`: Netscape cookies.txt icerigi
+- `YTDLP_COOKIES_BASE64`: Netscape cookies.txt iceriginin base64 hali
 
 Token ornegi:
 
@@ -85,5 +88,6 @@ $env:SHORTCUT_TOKEN="uzun-bir-sifre"
 ## Sinirlar
 
 - Bazi siteler giris, cookie veya ek dogrulama isteyebilir.
+- Instagram Story ve private hesap linkleri genelde giris/cookie ister. Public Reel/Post linkleriyle test et.
 - DRM, ozel/kapali hesaplar veya indirme iznin olmayan icerikler desteklenmez.
 - Bu proje yalnizca sana ait, herkese acik veya indirme iznin olan videolar icindir.

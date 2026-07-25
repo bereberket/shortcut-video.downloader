@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import base64
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,9 @@ MAX_FILESIZE = os.getenv("MAX_FILESIZE", "750M")
 DOWNLOAD_ROOT = Path(os.getenv("DOWNLOAD_ROOT", tempfile.gettempdir())) / "shortcut-video-downloads"
 DEFAULT_FORMAT = os.getenv("YTDLP_FORMAT", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best")
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
+YTDLP_COOKIES_FILE = os.getenv("YTDLP_COOKIES_FILE", "")
+YTDLP_COOKIES_TEXT = os.getenv("YTDLP_COOKIES_TEXT", "")
+YTDLP_COOKIES_BASE64 = os.getenv("YTDLP_COOKIES_BASE64", "")
 _active_downloads = 0
 
 HOME_HTML = """<!doctype html>
@@ -144,6 +148,36 @@ def newest_downloaded_file(folder: Path) -> Path:
     return max(candidates, key=lambda item: item.stat().st_mtime)
 
 
+def friendly_ytdlp_error(message: str) -> str:
+    lowered = message.lower()
+    if "you need to log in" in lowered or "login required" in lowered:
+        return (
+            "Bu link giris istiyor. Instagram Story, private hesap veya kapali icerikler "
+            "cloud servisinden cookies olmadan indirilemez. Public bir Reel/Post linki dene."
+        )
+    if "private video" in lowered or "private content" in lowered:
+        return "Bu icerik private gorunuyor. Yalnizca indirme iznin olan public linklerle kullan."
+    if "unsupported url" in lowered:
+        return "Bu site veya link tipi desteklenmiyor olabilir. Public video dosyasi, Reel/Post veya desteklenen bir platform linki dene."
+    return message
+
+
+def cookies_path_for_job(job_dir: Path) -> str:
+    if YTDLP_COOKIES_FILE:
+        return YTDLP_COOKIES_FILE
+
+    if not YTDLP_COOKIES_TEXT and not YTDLP_COOKIES_BASE64:
+        return ""
+
+    cookies_text = YTDLP_COOKIES_TEXT
+    if YTDLP_COOKIES_BASE64:
+        cookies_text = base64.b64decode(YTDLP_COOKIES_BASE64).decode("utf-8")
+
+    cookies_file = job_dir / "cookies.txt"
+    cookies_file.write_text(cookies_text, encoding="utf-8")
+    return str(cookies_file)
+
+
 def ensure_ytdlp_available() -> None:
     try:
         subprocess.run(
@@ -189,6 +223,10 @@ def download_video(url: str) -> tuple[Path, Path]:
     if MAX_FILESIZE:
         command.extend(["--max-filesize", MAX_FILESIZE])
 
+    cookies_path = cookies_path_for_job(job_dir)
+    if cookies_path:
+        command.extend(["--cookies", cookies_path])
+
     command.append(url)
 
     try:
@@ -211,7 +249,7 @@ def download_video(url: str) -> tuple[Path, Path]:
         shutil.rmtree(job_dir, ignore_errors=True)
         detail = (completed.stderr or completed.stdout).strip().splitlines()
         last_line = detail[-1] if detail else "Bilinmeyen yt-dlp hatasi."
-        raise ShortcutDownloadError(HTTPStatus.BAD_GATEWAY, last_line[:500])
+        raise ShortcutDownloadError(HTTPStatus.BAD_GATEWAY, friendly_ytdlp_error(last_line[:500]))
 
     return newest_downloaded_file(job_dir), job_dir
 

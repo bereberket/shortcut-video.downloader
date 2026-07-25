@@ -24,6 +24,7 @@ Ortam degiskenleri:
 - `MAX_FILESIZE`: Ornek `750M`.
 - `DOWNLOAD_TIMEOUT_SECONDS`: Ornek `900`.
 - `MAX_CONCURRENT_DOWNLOADS`: Ornek `2`.
+- `YTDLP_COOKIES_BASE64`: Sadece gerekirse, kendi hesabina ait cookies.txt iceriginin base64 hali.
 
 ## Cloud URL
 
@@ -56,3 +57,9 @@ https://HOSTINGIN-VERDIGI-URL/
 ## Onemli not
 
 Bu servis herkese acik internette duracagi icin token olmadan calistirma. Aksi halde baskalari senin servisinden video indirmeye calisabilir.
+
+## Instagram Story / private icerikler
+
+Instagram Story ve private hesap linkleri genelde giris ister. Cookie eklemeden cloud servis bunlari indiremez. En sorunsuz kullanim public Reel/Post linkleridir.
+
+Cookie eklemek hesabin icin hassas bir islemdir. Bunu sadece kendi hesabin ve indirme iznin olan icerikler icin kullan. `SHORTCUT_TOKEN` guclu olmazsa baska biri senin servisinden senin oturumunla istek attirmaya calisabilir.
