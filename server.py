@@ -134,10 +134,15 @@ def shortcut_response(message: str, *, status: str = "error") -> dict[str, objec
     }
 
 
-def read_download_query(path: str) -> tuple[str, str]:
+def read_download_query(path: str) -> tuple[str, str, bool]:
     parsed = urlparse(path)
     query = parse_qs(parsed.query)
-    return query.get("url", [""])[0], query.get("token", [""])[0]
+    debug = query.get("debug", ["0"])[0].lower() in {"1", "true", "yes"}
+    return query.get("url", [""])[0], query.get("token", [""])[0], debug
+
+
+def log_event(message: str) -> None:
+    print(message, flush=True)
 
 
 def newest_downloaded_file(folder: Path) -> Path:
@@ -347,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/debug":
-            url, token = read_download_query(self.path)
+            url, token, _debug = read_download_query(self.path)
             self.send_json(
                 HTTPStatus.OK,
                 {
@@ -360,8 +365,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/download":
-            url, _token = read_download_query(self.path)
-            self.handle_download(url)
+            url, _token, debug = read_download_query(self.path)
+            self.handle_download(url, debug=debug)
             return
 
         if parsed.path == "/":
@@ -425,10 +430,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "Token hatali veya eksik."})
         return False
 
-    def handle_download(self, url: str) -> None:
+    def handle_download(self, url: str, *, debug: bool = False) -> None:
         global _active_downloads
         if not self.require_token():
             return
+
+        log_event(f"download request debug={debug} url_length={len(url)} url={url[:160]}")
 
         if _active_downloads >= MAX_CONCURRENT_DOWNLOADS:
             self.send_json(
@@ -441,8 +448,23 @@ class Handler(BaseHTTPRequestHandler):
         try:
             _active_downloads += 1
             file_path, job_dir = download_video(url.strip())
+            file_size = file_path.stat().st_size
+            content_type = self.guess_file_content_type(file_path)
+            log_event(f"download ready file={file_path.name} size={file_size} content_type={content_type}")
+            if debug:
+                self.send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "file_name": file_path.name,
+                        "file_size": file_size,
+                        "content_type": content_type,
+                    },
+                )
+                return
             self.send_file(file_path)
         except ShortcutDownloadError as exc:
+            log_event(f"download error status={exc.status.value} message={exc.message}")
             self.send_json(exc.status, shortcut_response(exc.message))
         finally:
             _active_downloads = max(0, _active_downloads - 1)
@@ -466,18 +488,24 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_file(self, file_path: Path) -> None:
-        content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        content_type = self.guess_file_content_type(file_path)
         filename = safe_header_filename(file_path)
         size = file_path.stat().st_size
 
         self.send_response(HTTPStatus.OK.value)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(size))
+        self.send_header("X-File-Size", str(size))
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.end_headers()
 
         with file_path.open("rb") as handle:
             shutil.copyfileobj(handle, self.wfile)
+
+    def guess_file_content_type(self, file_path: Path) -> str:
+        if file_path.suffix.lower() == ".mp4":
+            return "video/mp4"
+        return mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
 
 
 def main() -> None:
